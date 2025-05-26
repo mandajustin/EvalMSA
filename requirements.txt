@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+biopython
+psutil
+python-multipart
+email_validator

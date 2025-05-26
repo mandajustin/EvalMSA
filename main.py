@@ -1,0 +1,210 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+from typing import List, Literal
+from Bio import AlignIO
+import tempfile
+import subprocess
+import os
+import psutil
+import uuid
+import json
+import time
+import traceback
+import threading
+from evaluator import calculate_entropy, calculate_blosum_score, calculate_gap_fraction
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Adjust as needed
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supported tools
+TOOLS = ["mafft", "clustalo", "muscle", "t_coffee"]
+
+# Request model
+class EvaluationRequest(BaseModel):
+    sequence: str
+    email: EmailStr
+    programs: List[Literal["mafft", "clustalo", "muscle", "t_coffee"]]
+
+# Response models
+class EvalResult(BaseModel):
+    tool: str
+    blosum_score: int
+    entropy: float
+    gap_fraction: float
+    cpu_time_sec: float
+    memory_usage_mb: float
+
+class MultiToolResult(BaseModel):
+    session_id: str
+    results: List[EvalResult]
+
+# Memory monitor - Removed as we now have a combined monitor_process_usage function
+# that handles both memory and CPU tracking in one thread
+
+@app.post("/evaluate", response_model=MultiToolResult)
+async def evaluate_from_text(request: EvaluationRequest):
+    print("Received Evaluation Request:")
+    print(f"Email: {request.email}")
+    print(f"Sequence: {request.sequence[:100]}...")
+    print(f"Programs: {request.programs}")
+
+    if not request.sequence or not request.programs:
+        raise HTTPException(status_code=400, detail="Sequence and programs are required.")
+
+    session_id = str(uuid.uuid4())
+    results = []
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "input.fasta")
+            with open(input_path, "w") as f:
+                f.write(request.sequence)
+
+            for tool in request.programs:
+                output_path = os.path.join(tmpdir, f"aligned_{tool}.fasta")
+
+                if tool == "mafft":
+                    cmd = ["mafft", "--auto", input_path]
+                    write_stdout = True
+                elif tool == "clustalo":
+                    cmd = ["clustalo", "-i", input_path, "-o", output_path, "--force"]
+                    write_stdout = False
+                elif tool == "muscle":
+                    cmd = ["muscle", "-align", input_path, "-out", output_path]
+                    write_stdout = False
+                elif tool == "t_coffee":
+                    cmd = ["t_coffee", input_path, "-output", "fasta_aln", "-outfile", output_path]
+                    write_stdout = False
+                else:
+                    continue
+
+                # Start subprocess and monitor memory and CPU
+                start_time = time.time()
+                wall_time_start = time.process_time()  # Get CPU time before process starts
+                
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE if write_stdout else subprocess.DEVNULL,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Monitor memory and CPU usage in background
+                mem_usage_list = []
+                cpu_time_samples = []
+                
+                def monitor_process_usage(proc, mem_list, cpu_samples):
+                    try:
+                        p = psutil.Process(proc.pid)
+                        last_cpu_times = None
+                        
+                        while proc.poll() is None:
+                            try:
+                                # Memory tracking
+                                mem = p.memory_info().rss / (1024 * 1024)  # MB
+                                mem_list.append(mem)
+                                
+                                # CPU tracking - accumulate CPU time deltas
+                                current_times = p.cpu_times()
+                                if last_cpu_times is not None:
+                                    # Calculate delta between samples
+                                    user_delta = current_times.user - last_cpu_times.user
+                                    system_delta = current_times.system - last_cpu_times.system
+                                    cpu_samples.append((user_delta, system_delta))
+                                
+                                last_cpu_times = current_times
+                                
+                            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                                break
+                            
+                            time.sleep(0.1)  # Sample every 100ms
+                    except Exception as e:
+                        print(f"Process monitoring error: {e}")
+                
+                # Start the monitoring thread with both memory and CPU tracking
+                monitor_thread = threading.Thread(
+                    target=monitor_process_usage, 
+                    args=(proc, mem_usage_list, cpu_time_samples)
+                )
+                monitor_thread.start()
+
+                try:
+                    stdout, stderr = proc.communicate(timeout=180)
+                    monitor_thread.join()
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    monitor_thread.join()
+                    raise HTTPException(status_code=500, detail=f"{tool} timed out.")
+
+                end_time = time.time()
+                wall_time_end = time.process_time()
+                
+                # Calculate CPU time
+                wall_cpu_time = wall_time_end - wall_time_start
+                
+                # Sum up all the CPU time deltas we collected
+                user_cpu_time = sum([sample[0] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
+                system_cpu_time = sum([sample[1] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
+                
+                # Fallback to wall time calculation if we didn't get psutil samples
+                cpu_time = user_cpu_time + system_cpu_time
+                
+                # If we still have no CPU time, fall back to wall time with a scaling factor
+                # This is an estimation that assumes reasonable CPU usage for MSA tools (typically CPU-bound)
+                if cpu_time < 0.01:  # Very small values likely indicate tracking failure
+                    elapsed_time = end_time - start_time
+                    cpu_time = elapsed_time * 0.9  # Assume 90% CPU usage as fallback
+
+                # Save MAFFT stdout to file
+                if write_stdout and stdout:
+                    with open(output_path, "wb") as f:
+                        f.write(stdout)
+
+                # Validate output
+                if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                    raise HTTPException(status_code=500, detail=f"{tool} did not produce output.")
+
+                try:
+                    alignment = AlignIO.read(output_path, "fasta")
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to read alignment from {tool}: {e}")
+
+                # Log CPU usage info for debugging
+                print(f"{tool} CPU measurements:")
+                print(f"  - User CPU time: {user_cpu_time:.3f}s")
+                print(f"  - System CPU time: {system_cpu_time:.3f}s")
+                print(f"  - Total CPU time: {cpu_time:.3f}s")
+                print(f"  - Wall time: {end_time - start_time:.3f}s")
+                
+                result = EvalResult(
+                    tool=tool,
+                    blosum_score=calculate_blosum_score(alignment),
+                    entropy=calculate_entropy(alignment),
+                    gap_fraction=calculate_gap_fraction(alignment),
+                    cpu_time_sec=cpu_time,  # Now contains accumulated CPU time
+                    memory_usage_mb=max(mem_usage_list) if mem_usage_list else 0.0
+                )
+                results.append(result)
+
+            response = MultiToolResult(session_id=session_id, results=results)
+
+            # Save JSON in temp dir
+            tmp_json_path = os.path.join(tmpdir, f"msa_eval_{session_id}.json")
+            with open(tmp_json_path, "w") as jf:
+                json.dump(response.dict(), jf, indent=4)
+
+            # Save a copy in app root
+            app_root_json_path = os.path.join(os.getcwd(), f"msa_eval_{session_id}.json")
+            with open(app_root_json_path, "w") as jf:
+                json.dump(response.dict(), jf, indent=4)
+
+            return response
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")

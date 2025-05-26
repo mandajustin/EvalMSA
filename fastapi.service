@@ -1,0 +1,12 @@
+[Unit]
+Description=FastAPI MSA Evaluation Service
+After=network.target
+
+[Service]
+User=your-linux-username
+WorkingDirectory=/path/to/your/project
+ExecStart=/usr/bin/env uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
