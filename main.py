@@ -17,19 +17,19 @@ from evaluator import calculate_entropy, calculate_blosum_score, calculate_gap_f
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Adjust as needed
+    allow_origins=["http://localhost:5173"], 
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Supported tools
-TOOLS = ["mafft", "clustalo", "muscle", "t_coffee"]
+# Supported tools - replaced dalign with probcons and kalign
+TOOLS = ["mafft", "clustalo", "muscle", "t_coffee", "probcons", "kalign", "prank"]
 
-# Request model
+# Request model - updated with new tools
 class EvaluationRequest(BaseModel):
     sequence: str
     email: EmailStr
-    programs: List[Literal["mafft", "clustalo", "muscle", "t_coffee"]]
+    programs: List[Literal["mafft", "clustalo", "muscle", "t_coffee", "probcons", "kalign", "prank"]]
 
 # Response models
 class EvalResult(BaseModel):
@@ -43,9 +43,6 @@ class EvalResult(BaseModel):
 class MultiToolResult(BaseModel):
     session_id: str
     results: List[EvalResult]
-
-# Memory monitor - Removed as we now have a combined monitor_process_usage function
-# that handles both memory and CPU tracking in one thread
 
 @app.post("/evaluate", response_model=MultiToolResult)
 async def evaluate_from_text(request: EvaluationRequest):
@@ -72,15 +69,36 @@ async def evaluate_from_text(request: EvaluationRequest):
                 if tool == "mafft":
                     cmd = ["mafft", "--auto", input_path]
                     write_stdout = True
+                    timeout = 180
                 elif tool == "clustalo":
-                    cmd = ["clustalo", "-i", input_path, "-o", output_path, "--force"]
+                    cmd = ["clustalo", "-i", input_path, "-o", output_path, "--outfmt", "fasta", "--force"]
                     write_stdout = False
+                    timeout = 180
                 elif tool == "muscle":
-                    cmd = ["muscle", "-align", input_path, "-out", output_path]
+                    cmd = ["muscle", "-align", input_path, "-output", output_path]
                     write_stdout = False
+                    timeout = 180
                 elif tool == "t_coffee":
                     cmd = ["t_coffee", input_path, "-output", "fasta_aln", "-outfile", output_path]
                     write_stdout = False
+                    timeout = 300  # T-Coffee often needs more time
+                elif tool == "probcons":
+                    # ProbCons reads from input and writes to stdout
+                    cmd = ["probcons", input_path]
+                    write_stdout = True
+                    timeout = 240
+                elif tool == "kalign":
+                    # Kalign can write to stdout or use -o flag
+                    cmd = ["kalign", "-o", output_path, input_path]
+                    write_stdout = False
+                    timeout = 180
+                elif tool == "prank":
+                    # PRANK command - may need adjustment based on version
+                    cmd = ["prank", "-d=" + input_path, "-o=" + output_path.replace('.fasta', '')]
+                    write_stdout = False
+                    timeout = 300  # PRANK can be slow for complex alignments
+                    # PRANK typically outputs with .best.fas extension
+                    expected_prank_output = output_path.replace('.fasta', '.best.fas')
                 else:
                     continue
 
@@ -134,12 +152,12 @@ async def evaluate_from_text(request: EvaluationRequest):
                 monitor_thread.start()
 
                 try:
-                    stdout, stderr = proc.communicate(timeout=180)
+                    stdout, stderr = proc.communicate(timeout=timeout)
                     monitor_thread.join()
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     monitor_thread.join()
-                    raise HTTPException(status_code=500, detail=f"{tool} timed out.")
+                    raise HTTPException(status_code=500, detail=f"{tool} timed out after {timeout} seconds.")
 
                 end_time = time.time()
                 wall_time_end = time.process_time()
@@ -160,18 +178,77 @@ async def evaluate_from_text(request: EvaluationRequest):
                     elapsed_time = end_time - start_time
                     cpu_time = elapsed_time * 0.9  # Assume 90% CPU usage as fallback
 
-                # Save MAFFT stdout to file
-                if write_stdout and stdout:
+                # Handle tool-specific output processing
+                if tool in ["mafft", "probcons"] and write_stdout and stdout:
                     with open(output_path, "wb") as f:
                         f.write(stdout)
+                elif tool == "prank":
+                    # PRANK creates output with .best.fas extension
+                    if os.path.exists(expected_prank_output):
+                        # Rename to expected output path
+                        os.rename(expected_prank_output, output_path)
+                    else:
+                        # Check for other possible PRANK output files
+                        prank_base = output_path.replace('.fasta', '')
+                        possible_outputs = [
+                            f"{prank_base}.best.fas",
+                            f"{prank_base}.best.fasta",
+                            f"{prank_base}.fas",
+                            f"{prank_base}.fasta"
+                        ]
+                        found_output = False
+                        for possible_file in possible_outputs:
+                            if os.path.exists(possible_file):
+                                os.rename(possible_file, output_path)
+                                found_output = True
+                                break
+                        if not found_output:
+                            print(f"PRANK stderr: {stderr.decode() if stderr else 'No stderr'}")
+                            raise HTTPException(status_code=500, detail=f"PRANK did not produce expected output file")
+                
+                # Print stderr for debugging if there are issues
+                if stderr and len(stderr) > 0:
+                    print(f"{tool} stderr: {stderr.decode()}")
 
-                # Validate output
+                # Validate output and check for empty sequences
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                     raise HTTPException(status_code=500, detail=f"{tool} did not produce output.")
+                
+                # Additional validation: check if file has meaningful content
+                try:
+                    with open(output_path, 'r') as f:
+                        content = f.read()
+                        if len(content.strip()) < 10:  # Very short files are likely empty/invalid
+                            raise HTTPException(status_code=500, detail=f"{tool} produced empty or invalid output.")
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Cannot read {tool} output file: {e}")
 
                 try:
-                    alignment = AlignIO.read(output_path, "fasta")
+                    # Try different formats for reading alignment files
+                    alignment = None
+                    formats_to_try = ["fasta", "clustal"]
+                    
+                    for fmt in formats_to_try:
+                        try:
+                            alignment = AlignIO.read(output_path, fmt)
+                            print(f"Successfully read {tool} output using format: {fmt}")
+                            break
+                        except Exception as fmt_error:
+                            print(f"Failed to read {tool} output with format {fmt}: {fmt_error}")
+                            continue
+                    
+                    if alignment is None:
+                        raise Exception("Could not read alignment in any supported format")
+                        
                 except Exception as e:
+                    print(f"Error reading alignment from {tool}: {e}")
+                    # Try to read the file content for debugging
+                    try:
+                        with open(output_path, 'r') as f:
+                            content = f.read()
+                            print(f"Output file content (first 500 chars): {content[:500]}")
+                    except:
+                        pass
                     raise HTTPException(status_code=500, detail=f"Failed to read alignment from {tool}: {e}")
 
                 # Log CPU usage info for debugging
