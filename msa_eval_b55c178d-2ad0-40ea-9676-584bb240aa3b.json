@@ -1,0 +1,61 @@
+{
+    "session_id": "b55c178d-2ad0-40ea-9676-584bb240aa3b",
+    "results": [
+        {
+            "tool": "muscle",
+            "blosum_score": -10115,
+            "entropy": 0.9880273449056646,
+            "gap_fraction": 0.6677966101694915,
+            "cpu_time_sec": 0.09109232425689698,
+            "memory_usage_mb": 0.625
+        },
+        {
+            "tool": "mafft",
+            "blosum_score": -10171,
+            "entropy": 0.9985202089009059,
+            "gap_fraction": 0.6608996539792388,
+            "cpu_time_sec": 0.1812096118927002,
+            "memory_usage_mb": 4.21875
+        },
+        {
+            "tool": "t_coffee",
+            "blosum_score": -10248,
+            "entropy": 0.9799273237501958,
+            "gap_fraction": 0.6711409395973155,
+            "cpu_time_sec": 0.19,
+            "memory_usage_mb": 445.3203125
+        },
+        {
+            "tool": "probcons",
+            "blosum_score": -10220,
+            "entropy": 0.9767355847476638,
+            "gap_fraction": 0.6722408026755853,
+            "cpu_time_sec": 0.09128608703613282,
+            "memory_usage_mb": 1.40625
+        },
+        {
+            "tool": "kalign",
+            "blosum_score": -9653,
+            "entropy": 1.1029934343327492,
+            "gap_fraction": 0.6397058823529411,
+            "cpu_time_sec": 0.09122278690338136,
+            "memory_usage_mb": 1.875
+        },
+        {
+            "tool": "clustalo",
+            "blosum_score": -11473,
+            "entropy": 1.0956009470384669,
+            "gap_fraction": 0.6585365853658537,
+            "cpu_time_sec": 0.09112064838409424,
+            "memory_usage_mb": 0.625
+        },
+        {
+            "tool": "prank",
+            "blosum_score": -13615,
+            "entropy": 0.9350298165460669,
+            "gap_fraction": 0.7215909090909091,
+            "cpu_time_sec": 3.13,
+            "memory_usage_mb": 6.5625
+        }
+    ]
+}
