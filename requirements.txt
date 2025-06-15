@@ -4,3 +4,8 @@ biopython
 psutil
 python-multipart
 email_validator
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
