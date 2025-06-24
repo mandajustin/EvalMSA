@@ -12,7 +12,7 @@ import json
 import time
 import traceback
 import threading
-from evaluator import calculate_entropy, calculate_blosum_score, calculate_gap_fraction
+from evaluator import calculate_entropy, calculate_blosum_score, calculate_gap_fraction, calculate_percent_identity
 from email_service import send_results_email
 
 app = FastAPI()
@@ -35,9 +35,10 @@ class EvaluationRequest(BaseModel):
 # Response models
 class EvalResult(BaseModel):
     tool: str
-    blosum_score: int
+    blosum_score: float
     entropy: float
     gap_fraction: float
+    percent_identity: float
     cpu_time_sec: float
     memory_usage_mb: float
 
@@ -281,6 +282,7 @@ def process_alignment_evaluation(session_id: str, sequence: str, email: str, pro
                         blosum_score=calculate_blosum_score(alignment),
                         entropy=calculate_entropy(alignment),
                         gap_fraction=calculate_gap_fraction(alignment),
+                        percent_identity=calculate_percent_identity(alignment),
                         cpu_time_sec=cpu_time,  # Now contains accumulated CPU time
                         memory_usage_mb=max(mem_usage_list) if mem_usage_list else 0.0
                     )

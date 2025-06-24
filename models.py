@@ -8,7 +8,7 @@ class EvaluationRequest(BaseModel):
 
 class EvalResult(BaseModel):
     tool: str
-    blosum_score: int
+    blosum_score: float
     entropy: float
     gap_fraction: float
     cpu_time_sec: float

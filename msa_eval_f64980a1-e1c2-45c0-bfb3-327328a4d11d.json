@@ -1,0 +1,68 @@
+{
+    "session_id": "f64980a1-e1c2-45c0-bfb3-327328a4d11d",
+    "results": [
+        {
+            "tool": "muscle",
+            "blosum_score": -44532,
+            "entropy": 1.57347183634437,
+            "gap_fraction": 0.31804653679653677,
+            "percent_identity": 23.389790257525522,
+            "cpu_time_sec": 2.29,
+            "memory_usage_mb": 170.6328125
+        },
+        {
+            "tool": "mafft",
+            "blosum_score": -44546,
+            "entropy": 1.6448235968181377,
+            "gap_fraction": 0.2828282828282828,
+            "percent_identity": 23.59892599141779,
+            "cpu_time_sec": 0.5420937538146973,
+            "memory_usage_mb": 4.21875
+        },
+        {
+            "tool": "t_coffee",
+            "blosum_score": -44959,
+            "entropy": 1.6100512867392907,
+            "gap_fraction": 0.3066978407371751,
+            "percent_identity": 23.212814587066713,
+            "cpu_time_sec": 0.27,
+            "memory_usage_mb": 443.90625
+        },
+        {
+            "tool": "probcons",
+            "blosum_score": -44658,
+            "entropy": 1.6032477221962667,
+            "gap_fraction": 0.3056473829201102,
+            "percent_identity": 23.317393201002833,
+            "cpu_time_sec": 1.7,
+            "memory_usage_mb": 14.8515625
+        },
+        {
+            "tool": "kalign",
+            "blosum_score": -40577,
+            "entropy": 1.74898505650721,
+            "gap_fraction": 0.23748298290727576,
+            "percent_identity": 23.256401179679425,
+            "cpu_time_sec": 0.09122064113616944,
+            "memory_usage_mb": 0.9375
+        },
+        {
+            "tool": "clustalo",
+            "blosum_score": -45526,
+            "entropy": 1.7104112746364377,
+            "gap_fraction": 0.2679349404589021,
+            "percent_identity": 23.024845083053812,
+            "cpu_time_sec": 2.1100000000000003,
+            "memory_usage_mb": 16.69921875
+        },
+        {
+            "tool": "prank",
+            "blosum_score": -54640,
+            "entropy": 1.4428477563158393,
+            "gap_fraction": 0.40484061393152304,
+            "percent_identity": 21.862623827251724,
+            "cpu_time_sec": 34.82,
+            "memory_usage_mb": 6.5625
+        }
+    ]
+}

@@ -1,0 +1,14 @@
+{
+    "session_id": "17b21dfc-b989-4fd5-a3d6-204ed4d40864",
+    "results": [
+        {
+            "tool": "prank",
+            "blosum_score": 1640,
+            "entropy": 0.7149919580114081,
+            "gap_fraction": 0.7823291951226256,
+            "percent_identity": 22.44495224859243,
+            "cpu_time_sec": 105.84,
+            "memory_usage_mb": 13.2890625
+        }
+    ]
+}

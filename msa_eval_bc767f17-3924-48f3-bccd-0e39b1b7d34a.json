@@ -1,0 +1,68 @@
+{
+    "session_id": "bc767f17-3924-48f3-bccd-0e39b1b7d34a",
+    "results": [
+        {
+            "tool": "muscle",
+            "blosum_score": 11542.02380952381,
+            "entropy": 1.1134164818000116,
+            "gap_fraction": 0.5362454013161304,
+            "percent_identity": 33.94929890024678,
+            "cpu_time_sec": 43.24,
+            "memory_usage_mb": 180.36328125
+        },
+        {
+            "tool": "t_coffee",
+            "blosum_score": 11439.404761904761,
+            "entropy": 1.157572145639483,
+            "gap_fraction": 0.5222079863335469,
+            "percent_identity": 33.95880356943153,
+            "cpu_time_sec": 1.14,
+            "memory_usage_mb": 474.84375
+        },
+        {
+            "tool": "kalign",
+            "blosum_score": 11665.880952380952,
+            "entropy": 1.5643758312202733,
+            "gap_fraction": 0.33407738095238093,
+            "percent_identity": 33.57882312994633,
+            "cpu_time_sec": 0.09143414497375489,
+            "memory_usage_mb": 1.875
+        },
+        {
+            "tool": "prank",
+            "blosum_score": 7456.428571428572,
+            "entropy": 0.9671036856594161,
+            "gap_fraction": 0.6460211991773454,
+            "percent_identity": 31.627912862207022,
+            "cpu_time_sec": 62.080000000000005,
+            "memory_usage_mb": 11.46875
+        },
+        {
+            "tool": "mafft",
+            "blosum_score": 11708.238095238095,
+            "entropy": 1.4778901548783985,
+            "gap_fraction": 0.37691450849345587,
+            "percent_identity": 34.021177190543156,
+            "cpu_time_sec": 2.0760407209396363,
+            "memory_usage_mb": 4.21875
+        },
+        {
+            "tool": "probcons",
+            "blosum_score": 10644.880952380952,
+            "entropy": 1.125189966255231,
+            "gap_fraction": 0.5456391511828612,
+            "percent_identity": 33.3950205948547,
+            "cpu_time_sec": 19.24,
+            "memory_usage_mb": 29.3046875
+        },
+        {
+            "tool": "clustalo",
+            "blosum_score": 9681.690476190477,
+            "entropy": 1.3878687472342766,
+            "gap_fraction": 0.45219733137470924,
+            "percent_identity": 32.59778526626982,
+            "cpu_time_sec": 6.529999999999999,
+            "memory_usage_mb": 17.91796875
+        }
+    ]
+}
