@@ -1,0 +1,59 @@
+{
+    "session_id": "e0681bfe-300b-4775-91a4-45c1d5aab3ba",
+    "results": [
+        {
+            "tool": "muscle",
+            "blosum_score": 16745.95575221239,
+            "entropy": 0.968258366946693,
+            "gap_fraction": 0.6753864945453675,
+            "percent_identity": 24.840003382020537,
+            "cpu_time_sec": 371.09000000000003,
+            "memory_usage_mb": 415.78515625
+        },
+        {
+            "tool": "kalign",
+            "blosum_score": 14926.548672566372,
+            "entropy": 1.1655071576187912,
+            "gap_fraction": 0.6112003557034466,
+            "percent_identity": 24.08841621938825,
+            "cpu_time_sec": 0.18178703784942626,
+            "memory_usage_mb": 3.125
+        },
+        {
+            "tool": "prank",
+            "blosum_score": 3642.9469026548672,
+            "entropy": 0.8558561895543728,
+            "gap_fraction": 0.7456104130106326,
+            "percent_identity": 22.187792369350042,
+            "cpu_time_sec": 259.03,
+            "memory_usage_mb": 25.4375
+        },
+        {
+            "tool": "clustalo",
+            "blosum_score": 14611.20353982301,
+            "entropy": 1.1224628309064102,
+            "gap_fraction": 0.6266313143486795,
+            "percent_identity": 24.16286954807846,
+            "cpu_time_sec": 35.81,
+            "memory_usage_mb": 63.6953125
+        },
+        {
+            "tool": "probcons",
+            "blosum_score": 15525.778761061947,
+            "entropy": 0.9455738455668191,
+            "gap_fraction": 0.6882529167888584,
+            "percent_identity": 24.487558742023438,
+            "cpu_time_sec": 234.76,
+            "memory_usage_mb": 216.12109375
+        },
+        {
+            "tool": "mafft",
+            "blosum_score": 14391.840707964602,
+            "entropy": 1.0946499317241734,
+            "gap_fraction": 0.6408841608817762,
+            "percent_identity": 24.247937992406218,
+            "cpu_time_sec": 0.01,
+            "memory_usage_mb": 4.0625
+        }
+    ]
+}

@@ -1,0 +1,59 @@
+{
+    "session_id": "0555339c-6c8e-4922-b6dd-3dccfeb44cdb",
+    "results": [
+        {
+            "tool": "muscle",
+            "blosum_score": 16745.95575221239,
+            "entropy": 0.968258366946693,
+            "gap_fraction": 0.6753864945453675,
+            "percent_identity": 24.840003382020537,
+            "cpu_time_sec": 368.42,
+            "memory_usage_mb": 415.87109375
+        },
+        {
+            "tool": "kalign",
+            "blosum_score": 14926.548672566372,
+            "entropy": 1.1655071576187912,
+            "gap_fraction": 0.6112003557034466,
+            "percent_identity": 24.08841621938825,
+            "cpu_time_sec": 0.18165936470031738,
+            "memory_usage_mb": 3.4375
+        },
+        {
+            "tool": "prank",
+            "blosum_score": 3989.9469026548672,
+            "entropy": 0.8608661692220486,
+            "gap_fraction": 0.7434338176139321,
+            "percent_identity": 22.237067528653203,
+            "cpu_time_sec": 276.86,
+            "memory_usage_mb": 25.56640625
+        },
+        {
+            "tool": "clustalo",
+            "blosum_score": 14611.20353982301,
+            "entropy": 1.1224628309064102,
+            "gap_fraction": 0.6266313143486795,
+            "percent_identity": 24.16286954807846,
+            "cpu_time_sec": 34.03,
+            "memory_usage_mb": 68.2109375
+        },
+        {
+            "tool": "probcons",
+            "blosum_score": 15525.778761061947,
+            "entropy": 0.9455738455668189,
+            "gap_fraction": 0.6882529167888584,
+            "percent_identity": 24.487558742023438,
+            "cpu_time_sec": 233.87,
+            "memory_usage_mb": 216.1328125
+        },
+        {
+            "tool": "mafft",
+            "blosum_score": 14391.840707964602,
+            "entropy": 1.0946499317241734,
+            "gap_fraction": 0.6408841608817762,
+            "percent_identity": 24.247937992406218,
+            "cpu_time_sec": 0.01,
+            "memory_usage_mb": 4.21875
+        }
+    ]
+}

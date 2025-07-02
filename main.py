@@ -12,6 +12,7 @@ import json
 import time
 import traceback
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from evaluator import calculate_entropy, calculate_blosum_score, calculate_gap_fraction, calculate_percent_identity
 from email_service import send_results_email
 
@@ -23,7 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supported tools - replaced dalign with probcons and kalign
 TOOLS = ["mafft", "clustalo", "muscle", "t_coffee", "probcons", "kalign", "prank"]
 
 # Request model - updated with new tools
@@ -56,10 +56,229 @@ class JobResponse(BaseModel):
 # Store for tracking job status (in production, use Redis or database)
 job_status = {}
 
-def process_alignment_evaluation(session_id: str, sequence: str, email: str, programs: List[str]):
-    """Background task to process the alignment evaluation"""
+def run_single_alignment_tool(tool: str, input_path: str, tmpdir: str, session_id: str) -> EvalResult:
+    """
+    Run a single MSA tool and return its evaluation result.
+    This function is designed to be run in parallel.
+    """
+    print(f"Starting {tool} for session {session_id}")
     
-    print(f"Starting background processing for session {session_id}")
+    output_path = os.path.join(tmpdir, f"aligned_{tool}.fasta")
+
+    # Configure command for each tool
+    if tool == "mafft":
+        cmd = ["mafft", "--auto", input_path]
+        write_stdout = True
+        timeout = 300
+    elif tool == "clustalo":
+        cmd = ["clustalo", "-i", input_path, "-o", output_path, "--outfmt", "fasta", "--force"]
+        write_stdout = False
+        timeout = 300
+    elif tool == "muscle":
+        cmd = ["muscle", "-align", input_path, "-output", output_path]
+        write_stdout = False
+        timeout = 180
+    elif tool == "t_coffee":
+        cmd = ["t_coffee", input_path, "-output", "fasta_aln", "-outfile", output_path]
+        write_stdout = False
+        timeout = 600  # T-Coffee often needs more time
+    elif tool == "probcons":
+        # ProbCons reads from input and writes to stdout
+        cmd = ["probcons", input_path]
+        write_stdout = True
+        timeout = 240
+    elif tool == "kalign":
+        # Kalign can write to stdout or use -o flag
+        cmd = ["kalign", "-o", output_path, input_path]
+        write_stdout = False
+        timeout = 300
+    elif tool == "prank":
+        # PRANK command - may need adjustment based on version
+        cmd = ["prank", "-d=" + input_path, "-o=" + output_path.replace('.fasta', '')]
+        write_stdout = False
+        timeout = 800  # PRANK can be slow for complex alignments
+        # PRANK typically outputs with .best.fas extension
+        expected_prank_output = output_path.replace('.fasta', '.best.fas')
+    else:
+        raise ValueError(f"Unsupported tool: {tool}")
+
+    try:
+        # Start subprocess and monitor memory and CPU
+        start_time = time.time()
+        wall_time_start = time.process_time()  # Get CPU time before process starts
+        
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE if write_stdout else subprocess.DEVNULL,
+            stderr=subprocess.PIPE
+        )
+        
+        # Monitor memory and CPU usage in background
+        mem_usage_list = []
+        cpu_time_samples = []
+        
+        def monitor_process_usage(proc, mem_list, cpu_samples):
+            try:
+                p = psutil.Process(proc.pid)
+                last_cpu_times = None
+                
+                while proc.poll() is None:
+                    try:
+                        # Memory tracking
+                        mem = p.memory_info().rss / (1024 * 1024)  # MB
+                        mem_list.append(mem)
+                        
+                        # CPU tracking - accumulate CPU time deltas
+                        current_times = p.cpu_times()
+                        if last_cpu_times is not None:
+                            # Calculate delta between samples
+                            user_delta = current_times.user - last_cpu_times.user
+                            system_delta = current_times.system - last_cpu_times.system
+                            cpu_samples.append((user_delta, system_delta))
+                        
+                        last_cpu_times = current_times
+                        
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        break
+                    
+                    time.sleep(0.1)  # Sample every 100ms
+            except Exception as e:
+                print(f"Process monitoring error for {tool}: {e}")
+        
+        # Start the monitoring thread with both memory and CPU tracking
+        monitor_thread = threading.Thread(
+            target=monitor_process_usage, 
+            args=(proc, mem_usage_list, cpu_time_samples)
+        )
+        monitor_thread.start()
+
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            monitor_thread.join()
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            monitor_thread.join()
+            raise Exception(f"{tool} timed out after {timeout} seconds")
+
+        end_time = time.time()
+        wall_time_end = time.process_time()
+        
+        # Calculate CPU time
+        wall_cpu_time = wall_time_end - wall_time_start
+        
+        # Sum up all the CPU time deltas we collected
+        user_cpu_time = sum([sample[0] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
+        system_cpu_time = sum([sample[1] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
+        
+        # Fallback to wall time calculation if we didn't get psutil samples
+        cpu_time = user_cpu_time + system_cpu_time
+        
+        # This is an estimation that assumes reasonable CPU usage for MSA tools (typically CPU-bound)
+        if cpu_time < 0.01:  # Very small values likely indicate tracking failure
+            elapsed_time = end_time - start_time
+            cpu_time = elapsed_time * 0.9  # Assume 90% CPU usage as fallback
+
+        # Handle tool-specific output processing
+        if tool in ["mafft", "probcons"] and write_stdout and stdout:
+            with open(output_path, "wb") as f:
+                f.write(stdout)
+        elif tool == "prank":
+            # PRANK creates output with .best.fas extension
+            if os.path.exists(expected_prank_output):
+                # Rename to expected output path
+                os.rename(expected_prank_output, output_path)
+            else:
+                # Check for other possible PRANK output files
+                prank_base = output_path.replace('.fasta', '')
+                possible_outputs = [
+                    f"{prank_base}.best.fas",
+                    f"{prank_base}.best.fasta",
+                    f"{prank_base}.fas",
+                    f"{prank_base}.fasta"
+                ]
+                found_output = False
+                for possible_file in possible_outputs:
+                    if os.path.exists(possible_file):
+                        os.rename(possible_file, output_path)
+                        found_output = True
+                        break
+                if not found_output:
+                    raise Exception(f"PRANK did not produce expected output file")
+        
+        # Print stderr for debugging if there are issues
+        if stderr and len(stderr) > 0:
+            print(f"{tool} stderr: {stderr.decode()}")
+
+        # Validate output and check for empty sequences
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            raise Exception(f"{tool} did not produce output")
+        
+        # Additional validation: check if file has meaningful content
+        try:
+            with open(output_path, 'r') as f:
+                content = f.read()
+                if len(content.strip()) < 10:  # Very short files are likely empty/invalid
+                    raise Exception(f"{tool} produced empty or invalid output")
+        except Exception as e:
+            raise Exception(f"Cannot read {tool} output file: {e}")
+
+        try:
+            # Try different formats for reading alignment files
+            alignment = None
+            formats_to_try = ["fasta", "clustal"]
+            
+            for fmt in formats_to_try:
+                try:
+                    alignment = AlignIO.read(output_path, fmt)
+                    print(f"Successfully read {tool} output using format: {fmt}")
+                    break
+                except Exception as fmt_error:
+                    print(f"Failed to read {tool} output with format {fmt}: {fmt_error}")
+                    continue
+            
+            if alignment is None:
+                raise Exception(f"Could not read alignment from {tool}")
+                
+        except Exception as e:
+            print(f"Error reading alignment from {tool}: {e}")
+            # Try to read the file content for debugging
+            try:
+                with open(output_path, 'r') as f:
+                    content = f.read()
+                    print(f"Output file content (first 500 chars): {content[:500]}")
+            except:
+                pass
+            raise
+
+        # Log CPU usage info for debugging
+        print(f"{tool} CPU measurements:")
+        print(f"  - User CPU time: {user_cpu_time:.3f}s")
+        print(f"  - System CPU time: {system_cpu_time:.3f}s")
+        print(f"  - Total CPU time: {cpu_time:.3f}s")
+        print(f"  - Wall time: {end_time - start_time:.3f}s")
+        
+        result = EvalResult(
+            tool=tool,
+            blosum_score=calculate_blosum_score(alignment),
+            entropy=calculate_entropy(alignment),
+            gap_fraction=calculate_gap_fraction(alignment),
+            percent_identity=calculate_percent_identity(alignment),
+            cpu_time_sec=cpu_time,  # Now contains accumulated CPU time
+            memory_usage_mb=max(mem_usage_list) if mem_usage_list else 0.0
+        )
+        
+        print(f"Successfully processed {tool} for session {session_id}")
+        return result
+
+    except Exception as e:
+        print(f"Error processing {tool} for session {session_id}: {e}")
+        raise  # Re-raise to be handled by the executor
+
+
+def process_alignment_evaluation(session_id: str, sequence: str, email: str, programs: List[str]):
+    """Background task to process the alignment evaluation using parallel execution"""
+    
+    print(f"Starting parallel background processing for session {session_id}")
     job_status[session_id] = {"status": "processing", "progress": 0, "total": len(programs)}
     
     results = []
@@ -70,228 +289,36 @@ def process_alignment_evaluation(session_id: str, sequence: str, email: str, pro
             with open(input_path, "w") as f:
                 f.write(sequence)
 
-            for i, tool in enumerate(programs):
-                print(f"Processing {tool} for session {session_id} ({i+1}/{len(programs)})")
-                job_status[session_id]["progress"] = i + 1
+            # Use ThreadPoolExecutor for parallel execution
+            # You can adjust max_workers based on your system resources
+            # For CPU-intensive tasks like MSA, typically use number of CPU cores
+            max_workers = min(len(programs), os.cpu_count() or 4)
+            
+            print(f"Running {len(programs)} MSA tools in parallel with {max_workers} workers")
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_tool = {
+                    executor.submit(run_single_alignment_tool, tool, input_path, tmpdir, session_id): tool 
+                    for tool in programs
+                }
                 
-                output_path = os.path.join(tmpdir, f"aligned_{tool}.fasta")
-
-                # Configure command for each tool
-                if tool == "mafft":
-                    cmd = ["mafft", "--auto", input_path]
-                    write_stdout = True
-                    timeout = 180
-                elif tool == "clustalo":
-                    cmd = ["clustalo", "-i", input_path, "-o", output_path, "--outfmt", "fasta", "--force"]
-                    write_stdout = False
-                    timeout = 180
-                elif tool == "muscle":
-                    cmd = ["muscle", "-align", input_path, "-output", output_path]
-                    write_stdout = False
-                    timeout = 180
-                elif tool == "t_coffee":
-                    cmd = ["t_coffee", input_path, "-output", "fasta_aln", "-outfile", output_path]
-                    write_stdout = False
-                    timeout = 300  # T-Coffee often needs more time
-                elif tool == "probcons":
-                    # ProbCons reads from input and writes to stdout
-                    cmd = ["probcons", input_path]
-                    write_stdout = True
-                    timeout = 240
-                elif tool == "kalign":
-                    # Kalign can write to stdout or use -o flag
-                    cmd = ["kalign", "-o", output_path, input_path]
-                    write_stdout = False
-                    timeout = 180
-                elif tool == "prank":
-                    # PRANK command - may need adjustment based on version
-                    cmd = ["prank", "-d=" + input_path, "-o=" + output_path.replace('.fasta', '')]
-                    write_stdout = False
-                    timeout = 800  # PRANK can be slow for complex alignments
-                    # PRANK typically outputs with .best.fas extension
-                    expected_prank_output = output_path.replace('.fasta', '.best.fas')
-                else:
-                    continue
-
-                try:
-                    # Start subprocess and monitor memory and CPU
-                    start_time = time.time()
-                    wall_time_start = time.process_time()  # Get CPU time before process starts
+                # Process completed tasks as they finish
+                completed_count = 0
+                for future in as_completed(future_to_tool):
+                    tool = future_to_tool[future]
+                    completed_count += 1
                     
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE if write_stdout else subprocess.DEVNULL,
-                        stderr=subprocess.PIPE
-                    )
+                    # Update progress
+                    job_status[session_id]["progress"] = completed_count
                     
-                    # Monitor memory and CPU usage in background
-                    mem_usage_list = []
-                    cpu_time_samples = []
-                    
-                    def monitor_process_usage(proc, mem_list, cpu_samples):
-                        try:
-                            p = psutil.Process(proc.pid)
-                            last_cpu_times = None
-                            
-                            while proc.poll() is None:
-                                try:
-                                    # Memory tracking
-                                    mem = p.memory_info().rss / (1024 * 1024)  # MB
-                                    mem_list.append(mem)
-                                    
-                                    # CPU tracking - accumulate CPU time deltas
-                                    current_times = p.cpu_times()
-                                    if last_cpu_times is not None:
-                                        # Calculate delta between samples
-                                        user_delta = current_times.user - last_cpu_times.user
-                                        system_delta = current_times.system - last_cpu_times.system
-                                        cpu_samples.append((user_delta, system_delta))
-                                    
-                                    last_cpu_times = current_times
-                                    
-                                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                                    break
-                                
-                                time.sleep(0.1)  # Sample every 100ms
-                        except Exception as e:
-                            print(f"Process monitoring error for {tool}: {e}")
-                    
-                    # Start the monitoring thread with both memory and CPU tracking
-                    monitor_thread = threading.Thread(
-                        target=monitor_process_usage, 
-                        args=(proc, mem_usage_list, cpu_time_samples)
-                    )
-                    monitor_thread.start()
-
                     try:
-                        stdout, stderr = proc.communicate(timeout=timeout)
-                        monitor_thread.join()
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        monitor_thread.join()
-                        print(f"{tool} timed out after {timeout} seconds for session {session_id}")
-                        continue  # Skip this tool and continue with others
-
-                    end_time = time.time()
-                    wall_time_end = time.process_time()
-                    
-                    # Calculate CPU time
-                    wall_cpu_time = wall_time_end - wall_time_start
-                    
-                    # Sum up all the CPU time deltas we collected
-                    user_cpu_time = sum([sample[0] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
-                    system_cpu_time = sum([sample[1] for sample in cpu_time_samples]) if cpu_time_samples else 0.0
-                    
-                    # Fallback to wall time calculation if we didn't get psutil samples
-                    cpu_time = user_cpu_time + system_cpu_time
-                    
-                    # If we still have no CPU time, fall back to wall time with a scaling factor
-                    # This is an estimation that assumes reasonable CPU usage for MSA tools (typically CPU-bound)
-                    if cpu_time < 0.01:  # Very small values likely indicate tracking failure
-                        elapsed_time = end_time - start_time
-                        cpu_time = elapsed_time * 0.9  # Assume 90% CPU usage as fallback
-
-                    # Handle tool-specific output processing
-                    if tool in ["mafft", "probcons"] and write_stdout and stdout:
-                        with open(output_path, "wb") as f:
-                            f.write(stdout)
-                    elif tool == "prank":
-                        # PRANK creates output with .best.fas extension
-                        if os.path.exists(expected_prank_output):
-                            # Rename to expected output path
-                            os.rename(expected_prank_output, output_path)
-                        else:
-                            # Check for other possible PRANK output files
-                            prank_base = output_path.replace('.fasta', '')
-                            possible_outputs = [
-                                f"{prank_base}.best.fas",
-                                f"{prank_base}.best.fasta",
-                                f"{prank_base}.fas",
-                                f"{prank_base}.fasta"
-                            ]
-                            found_output = False
-                            for possible_file in possible_outputs:
-                                if os.path.exists(possible_file):
-                                    os.rename(possible_file, output_path)
-                                    found_output = True
-                                    break
-                            if not found_output:
-                                print(f"PRANK did not produce expected output file for session {session_id}")
-                                if stderr:
-                                    print(f"PRANK stderr: {stderr.decode()}")
-                                continue  # Skip this tool
-                    
-                    # Print stderr for debugging if there are issues
-                    if stderr and len(stderr) > 0:
-                        print(f"{tool} stderr: {stderr.decode()}")
-
-                    # Validate output and check for empty sequences
-                    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                        print(f"{tool} did not produce output for session {session_id}")
-                        continue  # Skip this tool
-                    
-                    # Additional validation: check if file has meaningful content
-                    try:
-                        with open(output_path, 'r') as f:
-                            content = f.read()
-                            if len(content.strip()) < 10:  # Very short files are likely empty/invalid
-                                print(f"{tool} produced empty or invalid output for session {session_id}")
-                                continue  # Skip this tool
+                        result = future.result()
+                        results.append(result)
+                        print(f"Completed {tool} ({completed_count}/{len(programs)})")
                     except Exception as e:
-                        print(f"Cannot read {tool} output file for session {session_id}: {e}")
-                        continue  # Skip this tool
-
-                    try:
-                        # Try different formats for reading alignment files
-                        alignment = None
-                        formats_to_try = ["fasta", "clustal"]
-                        
-                        for fmt in formats_to_try:
-                            try:
-                                alignment = AlignIO.read(output_path, fmt)
-                                print(f"Successfully read {tool} output using format: {fmt}")
-                                break
-                            except Exception as fmt_error:
-                                print(f"Failed to read {tool} output with format {fmt}: {fmt_error}")
-                                continue
-                        
-                        if alignment is None:
-                            print(f"Could not read alignment from {tool} for session {session_id}")
-                            continue  # Skip this tool
-                            
-                    except Exception as e:
-                        print(f"Error reading alignment from {tool} for session {session_id}: {e}")
-                        # Try to read the file content for debugging
-                        try:
-                            with open(output_path, 'r') as f:
-                                content = f.read()
-                                print(f"Output file content (first 500 chars): {content[:500]}")
-                        except:
-                            pass
-                        continue  # Skip this tool
-
-                    # Log CPU usage info for debugging
-                    print(f"{tool} CPU measurements for session {session_id}:")
-                    print(f"  - User CPU time: {user_cpu_time:.3f}s")
-                    print(f"  - System CPU time: {system_cpu_time:.3f}s")
-                    print(f"  - Total CPU time: {cpu_time:.3f}s")
-                    print(f"  - Wall time: {end_time - start_time:.3f}s")
-                    
-                    result = EvalResult(
-                        tool=tool,
-                        blosum_score=calculate_blosum_score(alignment),
-                        entropy=calculate_entropy(alignment),
-                        gap_fraction=calculate_gap_fraction(alignment),
-                        percent_identity=calculate_percent_identity(alignment),
-                        cpu_time_sec=cpu_time,  # Now contains accumulated CPU time
-                        memory_usage_mb=max(mem_usage_list) if mem_usage_list else 0.0
-                    )
-                    results.append(result)
-                    print(f"Successfully processed {tool} for session {session_id}")
-
-                except Exception as e:
-                    print(f"Error processing {tool} for session {session_id}: {e}")
-                    continue  # Skip this tool and continue with others
+                        print(f"Tool {tool} failed: {e}")
+                        # Continue with other tools even if one fails
 
             # Update job status
             job_status[session_id]["status"] = "completed" if results else "failed"
@@ -303,10 +330,6 @@ def process_alignment_evaluation(session_id: str, sequence: str, email: str, pro
             # Save JSON results to files
             tmp_json_path = os.path.join(tmpdir, f"msa_eval_{session_id}.json")
             with open(tmp_json_path, "w") as jf:
-                json.dump(response.dict(), jf, indent=4)
-
-            app_root_json_path = os.path.join(os.getcwd(), f"msa_eval_{session_id}.json")
-            with open(app_root_json_path, "w") as jf:
                 json.dump(response.dict(), jf, indent=4)
 
             # Send results via email
@@ -332,7 +355,7 @@ def process_alignment_evaluation(session_id: str, sequence: str, email: str, pro
                 print(f"Email sending error for session {session_id}: {e}")
                 job_status[session_id]["email_sent"] = False
 
-            print(f"Background processing completed for session {session_id}")
+            print(f"Parallel background processing completed for session {session_id}")
 
     except Exception as e:
         print(f"Background processing error for session {session_id}: {e}")
