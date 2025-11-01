@@ -112,18 +112,7 @@ class MSAnalyzer:
 
 # Example usage
 if __name__ == "__main__":
-    data = {
-        "session_id": "0cf8b332-a4f8-40ab-8e93-132cb806397e",
-        "results": [
-            {"tool": "muscle", "blosum_score": -1362295, "entropy": 1.3455008900558034, "gap_fraction": 0.3946050096339114, "cpu_time_sec": 103.16, "memory_usage_mb": 420.66015625},
-            {"tool": "mafft", "blosum_score": -1364402, "entropy": 1.486567627107301, "gap_fraction": 0.3300639658848614, "cpu_time_sec": 0.01, "memory_usage_mb": 4.21875},
-            {"tool": "t_coffee", "blosum_score": -1386585, "entropy": 1.37416379619616, "gap_fraction": 0.3857282502443793, "cpu_time_sec": 2.61, "memory_usage_mb": 502.34375},
-            {"tool": "probcons", "blosum_score": -1370478, "entropy": 1.3095481502821744, "gap_fraction": 0.41325863678804853, "cpu_time_sec": 85.38, "memory_usage_mb": 50.01953125},
-            {"tool": "kalign", "blosum_score": -1384737, "entropy": 1.4744551947036326, "gap_fraction": 0.3460978147762747, "cpu_time_sec": 0.18179519176483155, "memory_usage_mb": 3.4375},
-            {"tool": "clustalo", "blosum_score": -1393753, "entropy": 1.4998217695101115, "gap_fraction": 0.33432203389830506, "cpu_time_sec": 26.6, "memory_usage_mb": 35.8984375},
-            {"tool": "prank", "blosum_score": -1550175, "entropy": 1.1009310948442945, "gap_fraction": 0.5257358490566038, "cpu_time_sec": 76.98, "memory_usage_mb": 16.828125}
-        ]
-    }
+    
     
     analyzer = MSAnalyzer()
     report = analyzer.analyze(data)

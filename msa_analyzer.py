@@ -233,27 +233,27 @@ class MSABiologicalQualityAnalyzer:
             explanation = f"**{tool.upper()}** (Biological Rank: #{rank}, Quality Score: {row['Biological_Quality_Score']:.3f})\n"
             
             if strengths:
-                explanation += f"✅ **Biological Strengths:** {'; '.join(strengths)}\n"
+                explanation += f" **Biological Strengths:** {'; '.join(strengths)}\n"
             if weaknesses:
-                explanation += f"❌ **Biological Limitations:** {'; '.join(weaknesses)}\n"
+                explanation += f" **Biological Limitations:** {'; '.join(weaknesses)}\n"
             if neutral:
-                explanation += f"➖ **Moderate Performance:** {'; '.join(neutral)}\n"
+                explanation += f" **Moderate Performance:** {'; '.join(neutral)}\n"
             
             # Add efficiency information (for reference only)
             if 'CPU_Time' in row and 'Memory_Usage' in row:
-                explanation += f"⚡ **Computational Efficiency:** {row['CPU_Time']:.2f}s CPU, {row['Memory_Usage']:.1f}MB memory\n"
+                explanation += f" **Computational Efficiency:** {row['CPU_Time']:.2f}s CPU, {row['Memory_Usage']:.1f}MB memory\n"
             
             # Add ranking-based recommendations
             if rank == 1:
-                explanation += "🏆 **TOP BIOLOGICAL QUALITY** - Best overall biological performance."
+                explanation += "**TOP BIOLOGICAL QUALITY** - Best overall biological performance."
             elif rank == 2:
-                explanation += "🥈 **EXCELLENT BIOLOGICAL QUALITY** - Outstanding biological accuracy."
+                explanation += " **EXCELLENT BIOLOGICAL QUALITY** - Outstanding biological accuracy."
             elif rank == 3:
-                explanation += "🥉 **HIGH BIOLOGICAL QUALITY** - Strong biological performance."
+                explanation += " **HIGH BIOLOGICAL QUALITY** - Strong biological performance."
             elif rank <= len(rankings) // 2:
-                explanation += "✅ **GOOD BIOLOGICAL QUALITY** - Solid biological performance."
+                explanation += "**GOOD BIOLOGICAL QUALITY** - Solid biological performance."
             else:
-                explanation += "⚠️ **CONSIDER FOR BIOLOGICAL QUALITY** - May have biological limitations."
+                explanation += "**CONSIDER FOR BIOLOGICAL QUALITY** - May have biological limitations."
             
             explanations[tool] = explanation
         
@@ -477,47 +477,47 @@ class MSABiologicalQualityAnalyzer:
         recommendations = self.generate_biological_recommendations()
         
         # Generate comprehensive report
-        report = "# 🧬 MSA Tools - Biological Quality Analysis Report\n\n"
+        report = "# MSA Tools - Biological Quality Analysis Report\n\n"
         
         # Executive Summary
         best_tool = rankings.index[0]  # First in biologically ranked order
         best_score = rankings.loc[best_tool, 'Biological_Quality_Score']
-        report += f"## 📊 Executive Summary\n\n"
-        report += f"**🏆 BEST BIOLOGICAL QUALITY: {best_tool.upper()}** (Rank #1, Bio Score: {best_score:.3f})\n\n"
+        report += f"##  Executive Summary\n\n"
+        report += f"** BEST BIOLOGICAL QUALITY: {best_tool.upper()}** (Rank #1, Bio Score: {best_score:.3f})\n\n"
         report += f"Analysis based on biological quality metrics only. Computational efficiency reported for reference.\n"
         report += f"Tools ranked 1 (best) to {len(rankings)} (worst) based purely on biological alignment quality.\n\n"
         
         # Biological Rankings Table
-        report += "## 🏆 Biological Quality Rankings (Ascending Order)\n\n"
+        report += "##  Biological Quality Rankings (Ascending Order)\n\n"
         bio_cols = ['Biological_Rank', 'Biological_Quality_Score', 'BLOSUM_Score', 'Entropy', 'Gap_Fraction', 'Percent_Identity']
         bio_table = rankings[bio_cols].round(4)
         report += "```\n" + bio_table.to_string() + "\n```\n\n"
         
         # Efficiency Reference Table
         if 'CPU_Time' in rankings.columns and 'Memory_Usage' in rankings.columns:
-            report += "## ⚡ Computational Efficiency Reference\n\n"
+            report += "##  Computational Efficiency Reference\n\n"
             eff_cols = ['Biological_Rank', 'CPU_Time', 'Memory_Usage']
             eff_table = rankings[eff_cols].round(3)
             report += "```\n" + eff_table.to_string() + "\n```\n\n"
         
         # Top performers with detailed analysis
-        report += "## 🥇 Top Biological Quality Performers\n\n"
+        report += "##  Top Biological Quality Performers\n\n"
         for i in range(min(3, len(rankings))):
             tool = rankings.index[i]
             report += f"### {explanations[tool]}\n\n"
         
         # Specific recommendations
-        report += "## 🎯 Biological Quality Recommendations\n\n"
+        report += "##  Biological Quality Recommendations\n\n"
         for category, recommendation in recommendations.items():
             report += f"**{category}:** {recommendation}\n\n"
         
         # Complete tool analysis (all tools in biological rank order)
-        report += "## 🔍 Complete Biological Analysis (By Rank)\n\n"
+        report += "##  Complete Biological Analysis (By Rank)\n\n"
         for tool in rankings.index:
             report += f"### {explanations[tool]}\n"
         
         # Statistical insights
-        report += "## 📊 Biological Quality Statistics\n\n"
+        report += "##  Biological Quality Statistics\n\n"
         report += f"- **Bio Quality Range:** {rankings['Biological_Quality_Score'].min():.3f} - {rankings['Biological_Quality_Score'].max():.3f}\n"
         report += f"- **BLOSUM Range:** {rankings['BLOSUM_Score'].min():.0f} - {rankings['BLOSUM_Score'].max():.0f}\n"
         report += f"- **Identity Range:** {rankings['Percent_Identity'].min():.1f}% - {rankings['Percent_Identity'].max():.1f}%\n"
@@ -525,7 +525,7 @@ class MSABiologicalQualityAnalyzer:
         report += f"- **Gap Fraction Range:** {rankings['Gap_Fraction'].min():.3f} - {rankings['Gap_Fraction'].max():.3f}\n"
         
         # Analysis methodology
-        report += "\n## 🧪 Analysis Methodology\n\n"
+        report += "\n##  Analysis Methodology\n\n"
         report += "This analysis evaluates MSA tools based on biological quality metrics:\n"
         report += "- **BLOSUM Score:** Measures amino acid substitution quality\n"
         report += "- **Entropy:** Assesses conservation patterns in alignment\n"

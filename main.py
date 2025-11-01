@@ -69,34 +69,34 @@ def run_single_alignment_tool(tool: str, input_path: str, tmpdir: str, session_i
     if tool == "mafft":
         cmd = ["mafft", "--auto", input_path]
         write_stdout = True
-        timeout = 300
+        timeout = 500
     elif tool == "clustalo":
         cmd = ["clustalo", "-i", input_path, "-o", output_path, "--outfmt", "fasta", "--force"]
         write_stdout = False
-        timeout = 300
+        timeout = 500
     elif tool == "muscle":
         cmd = ["muscle", "-align", input_path, "-output", output_path]
         write_stdout = False
-        timeout = 180
+        timeout = 500
     elif tool == "t_coffee":
         cmd = ["t_coffee", input_path, "-output", "fasta_aln", "-outfile", output_path]
         write_stdout = False
-        timeout = 600  # T-Coffee often needs more time
+        timeout = 1000  # T-Coffee often needs more time
     elif tool == "probcons":
         # ProbCons reads from input and writes to stdout
         cmd = ["probcons", input_path]
         write_stdout = True
-        timeout = 240
+        timeout = 800
     elif tool == "kalign":
         # Kalign can write to stdout or use -o flag
         cmd = ["kalign", "-o", output_path, input_path]
         write_stdout = False
-        timeout = 300
+        timeout = 800
     elif tool == "prank":
         # PRANK command - may need adjustment based on version
         cmd = ["prank", "-d=" + input_path, "-o=" + output_path.replace('.fasta', '')]
         write_stdout = False
-        timeout = 800  # PRANK can be slow for complex alignments
+        timeout = 2000  # PRANK can be slow for complex alignments
         # PRANK typically outputs with .best.fas extension
         expected_prank_output = output_path.replace('.fasta', '.best.fas')
     else:
